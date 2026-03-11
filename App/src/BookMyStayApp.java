@@ -1,9 +1,12 @@
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Book My Stay Application
- * Demonstrates room types and static availability.
+ * Demonstrates centralized room inventory management using HashMap.
  *
  * @author YourName
- * @version 2.1
+ * @version 3.1
  */
 public class BookMyStayApp {
 
@@ -11,7 +14,7 @@ public class BookMyStayApp {
 
         System.out.println("=================================");
         System.out.println("Welcome to Book My Stay");
-        System.out.println("Hotel Booking System v2.1");
+        System.out.println("Hotel Booking System v3.1");
         System.out.println("=================================\n");
 
         // Create room objects
@@ -19,22 +22,27 @@ public class BookMyStayApp {
         Room doubleRoom = new DoubleRoom();
         Room suite = new SuiteRoom();
 
-        // Static availability
-        int singleAvailable = 10;
-        int doubleAvailable = 6;
-        int suiteAvailable = 3;
+        // Initialize centralized inventory
+        RoomInventory inventory = new RoomInventory();
 
-        // Display details
+        // Display room details with availability
         single.displayRoom();
-        System.out.println("Available: " + singleAvailable);
+        System.out.println("Available: " + inventory.getAvailability("Single Room"));
         System.out.println();
 
         doubleRoom.displayRoom();
-        System.out.println("Available: " + doubleAvailable);
+        System.out.println("Available: " + inventory.getAvailability("Double Room"));
         System.out.println();
 
         suite.displayRoom();
-        System.out.println("Available: " + suiteAvailable);
+        System.out.println("Available: " + inventory.getAvailability("Suite Room"));
+        System.out.println();
+
+        // Example inventory update
+        inventory.updateAvailability("Single Room", -1);
+
+        System.out.println("Updated Single Room Availability: "
+                + inventory.getAvailability("Single Room"));
     }
 }
 
@@ -98,5 +106,43 @@ class SuiteRoom extends Room {
 
     SuiteRoom() {
         super("Suite Room", 3, 600, 7500);
+    }
+}
+
+
+/**
+ * RoomInventory manages centralized room availability.
+ * Uses HashMap to store room type and available count.
+ *
+ * @version 3.0
+ */
+class RoomInventory {
+
+    private Map<String, Integer> inventory;
+
+    // Constructor initializes inventory
+    RoomInventory() {
+        inventory = new HashMap<>();
+        inventory.put("Single Room", 10);
+        inventory.put("Double Room", 6);
+        inventory.put("Suite Room", 3);
+    }
+
+    // Get availability of a room type
+    int getAvailability(String roomType) {
+        return inventory.getOrDefault(roomType, 0);
+    }
+
+    // Update availability (positive or negative)
+    void updateAvailability(String roomType, int change) {
+        int current = inventory.getOrDefault(roomType, 0);
+        inventory.put(roomType, current + change);
+    }
+
+    // Display full inventory
+    void displayInventory() {
+        for (String room : inventory.keySet()) {
+            System.out.println(room + " : " + inventory.get(room));
+        }
     }
 }
