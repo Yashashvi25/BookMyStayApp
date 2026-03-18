@@ -17,7 +17,6 @@ class Reservation {
     private static final List<String> VALID_ROOM_TYPES = Arrays.asList("Standard", "Deluxe", "Suite");
 
     public Reservation(int reservationId, String customerName, String roomType, int nights) throws InvalidBookingException {
-        // Input validation
         if (customerName == null || customerName.trim().isEmpty()) {
             throw new InvalidBookingException("Customer name cannot be empty.");
         }
@@ -46,11 +45,10 @@ class Reservation {
     }
 }
 
-// Booking manager with cancellation support
+// Thread-safe booking manager
 class BookingManager {
-    private List<Reservation> reservations = new ArrayList<>();
-    private Map<String, Integer> roomInventory = new HashMap<>();
-    private Stack<String> releasedRooms = new Stack<>();
+    private List<Reservation> reservations = Collections.synchronizedList(new ArrayList<>());
+    private Map<String, Integer> roomInventory = Collections.synchronizedMap(new HashMap<>());
 
     public BookingManager() {
         roomInventory.put("Standard", 5);
@@ -58,88 +56,94 @@ class BookingManager {
         roomInventory.put("Suite", 2);
     }
 
-    // Add reservation
-    public void addReservation(Reservation res) throws InvalidBookingException {
+    // Synchronized booking to ensure thread safety
+    public synchronized void addReservation(Reservation res) throws InvalidBookingException {
         String room = res.getRoomType();
         int available = roomInventory.getOrDefault(room, 0);
         if (available <= 0) {
             throw new InvalidBookingException("No rooms available for type: " + room);
         }
+
         roomInventory.put(room, available - 1);
         reservations.add(res);
-        System.out.println("Booking successful: " + res);
+        System.out.println(Thread.currentThread().getName() + " booked: " + res);
     }
 
-    // Cancel reservation
-    public void cancelReservation(int reservationId) throws InvalidBookingException {
-        Reservation toCancel = null;
-        for (Reservation r : reservations) {
-            if (r.getReservationId() == reservationId) {
-                toCancel = r;
-                break;
-            }
-        }
-        if (toCancel == null) {
-            throw new InvalidBookingException("Reservation ID " + reservationId + " does not exist or already cancelled.");
-        }
-
-        // Rollback inventory
-        String room = toCancel.getRoomType();
-        roomInventory.put(room, roomInventory.get(room) + 1);
-        releasedRooms.push(room); // Track rollback LIFO
-
-        reservations.remove(toCancel);
-        System.out.println("Cancellation successful: " + toCancel);
-    }
-
-    public void generateReport() {
+    public synchronized void generateReport() {
         System.out.println("\n--- Current Reservations ---");
-        if (reservations.isEmpty()) {
-            System.out.println("No active bookings.");
-        } else {
-            for (Reservation r : reservations) {
-                System.out.println(r);
-            }
+        for (Reservation r : reservations) {
+            System.out.println(r);
         }
         System.out.println("--- End of Report ---\n");
     }
 
-    public void showInventory() {
+    public synchronized void showInventory() {
         System.out.println("Current Room Inventory: " + roomInventory);
-    }
-
-    public void showReleasedRooms() {
-        System.out.println("Recently Released Rooms (LIFO): " + releasedRooms);
     }
 }
 
-// Main class matching file name
+// Runnable task representing a guest trying to book a room
+class BookingTask implements Runnable {
+    private BookingManager manager;
+    private Reservation reservation;
+
+    public BookingTask(BookingManager manager, Reservation reservation) {
+        this.manager = manager;
+        this.reservation = reservation;
+    }
+
+    @Override
+    public void run() {
+        try {
+            manager.addReservation(reservation);
+        } catch (InvalidBookingException e) {
+            System.out.println(Thread.currentThread().getName() + " booking failed: " + e.getMessage());
+        }
+    }
+}
+
+// Main class matching the file name
 public class BookMyStayApp {
     public static void main(String[] args) {
         BookingManager manager = new BookingManager();
 
+        // Simulate concurrent booking requests
+        Thread t1 = new Thread(new BookingTask(manager, createReservation(101, "Alice", "Deluxe", 3)), "Guest-1");
+        Thread t2 = new Thread(new BookingTask(manager, createReservation(102, "Bob", "Deluxe", 2)), "Guest-2");
+        Thread t3 = new Thread(new BookingTask(manager, createReservation(103, "Charlie", "Standard", 1)), "Guest-3");
+        Thread t4 = new Thread(new BookingTask(manager, createReservation(104, "Daisy", "Suite", 2)), "Guest-4");
+        Thread t5 = new Thread(new BookingTask(manager, createReservation(105, "Eve", "Deluxe", 1)), "Guest-5");
+
+        // Start all threads simultaneously
+        t1.start();
+        t2.start();
+        t3.start();
+        t4.start();
+        t5.start();
+
+        // Wait for all threads to finish
         try {
-            Reservation r1 = new Reservation(101, "Alice", "Deluxe", 3);
-            Reservation r2 = new Reservation(102, "Bob", "Standard", 2);
-            Reservation r3 = new Reservation(103, "Charlie", "Suite", 4);
-
-            manager.addReservation(r1);
-            manager.addReservation(r2);
-            manager.addReservation(r3);
-
-            // Cancel one booking
-            manager.cancelReservation(102);
-
-            // Attempt to cancel non-existent booking
-            manager.cancelReservation(999);
-
-        } catch (InvalidBookingException e) {
-            System.out.println("Operation failed: " + e.getMessage());
+            t1.join();
+            t2.join();
+            t3.join();
+            t4.join();
+            t5.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
 
-        // Display current state
+        // Display final state
         manager.generateReport();
         manager.showInventory();
-        manager.showReleasedRooms();
+    }
+
+    // Helper method to create reservations safely
+    private static Reservation createReservation(int id, String name, String roomType, int nights) {
+        try {
+            return new Reservation(id, name, roomType, nights);
+        } catch (InvalidBookingException e) {
+            System.out.println("Failed to create reservation: " + e.getMessage());
+            return null;
+        }
     }
 }
