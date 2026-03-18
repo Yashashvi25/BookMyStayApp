@@ -1,3 +1,4 @@
+import java.io.*;
 import java.util.*;
 
 // Custom exception for invalid bookings
@@ -7,8 +8,9 @@ class InvalidBookingException extends Exception {
     }
 }
 
-// Reservation class
-class Reservation {
+// Serializable Reservation class
+class Reservation implements Serializable {
+    private static final long serialVersionUID = 1L;
     private int reservationId;
     private String customerName;
     private String roomType;
@@ -45,30 +47,35 @@ class Reservation {
     }
 }
 
-// Thread-safe booking manager
-class BookingManager {
-    private List<Reservation> reservations = Collections.synchronizedList(new ArrayList<>());
-    private Map<String, Integer> roomInventory = Collections.synchronizedMap(new HashMap<>());
+// Booking manager with persistence
+class BookingManager implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private List<Reservation> reservations;
+    private Map<String, Integer> roomInventory;
+
+    private static final String FILE_NAME = "booking_data.ser";
 
     public BookingManager() {
+        reservations = Collections.synchronizedList(new ArrayList<>());
+        roomInventory = Collections.synchronizedMap(new HashMap<>());
         roomInventory.put("Standard", 5);
         roomInventory.put("Deluxe", 3);
         roomInventory.put("Suite", 2);
     }
 
-    // Synchronized booking to ensure thread safety
+    // Thread-safe reservation addition
     public synchronized void addReservation(Reservation res) throws InvalidBookingException {
         String room = res.getRoomType();
         int available = roomInventory.getOrDefault(room, 0);
         if (available <= 0) {
             throw new InvalidBookingException("No rooms available for type: " + room);
         }
-
         roomInventory.put(room, available - 1);
         reservations.add(res);
-        System.out.println(Thread.currentThread().getName() + " booked: " + res);
+        System.out.println("Booking successful: " + res);
     }
 
+    // Generate report
     public synchronized void generateReport() {
         System.out.println("\n--- Current Reservations ---");
         for (Reservation r : reservations) {
@@ -80,70 +87,49 @@ class BookingManager {
     public synchronized void showInventory() {
         System.out.println("Current Room Inventory: " + roomInventory);
     }
-}
 
-// Runnable task representing a guest trying to book a room
-class BookingTask implements Runnable {
-    private BookingManager manager;
-    private Reservation reservation;
-
-    public BookingTask(BookingManager manager, Reservation reservation) {
-        this.manager = manager;
-        this.reservation = reservation;
+    // Save state to file
+    public synchronized void saveState() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(FILE_NAME))) {
+            oos.writeObject(this);
+            System.out.println("System state saved successfully.");
+        } catch (IOException e) {
+            System.out.println("Failed to save system state: " + e.getMessage());
+        }
     }
 
-    @Override
-    public void run() {
-        try {
-            manager.addReservation(reservation);
-        } catch (InvalidBookingException e) {
-            System.out.println(Thread.currentThread().getName() + " booking failed: " + e.getMessage());
+    // Load state from file
+    public static BookingManager loadState() {
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(FILE_NAME))) {
+            return (BookingManager) ois.readObject();
+        } catch (FileNotFoundException e) {
+            System.out.println("Persistence file not found. Starting fresh.");
+        } catch (IOException | ClassNotFoundException e) {
+            System.out.println("Failed to load system state: " + e.getMessage());
         }
+        return new BookingManager(); // fresh manager if load fails
     }
 }
 
 // Main class matching the file name
 public class BookMyStayApp {
     public static void main(String[] args) {
-        BookingManager manager = new BookingManager();
+        // Load persisted data if available
+        BookingManager manager = BookingManager.loadState();
 
-        // Simulate concurrent booking requests
-        Thread t1 = new Thread(new BookingTask(manager, createReservation(101, "Alice", "Deluxe", 3)), "Guest-1");
-        Thread t2 = new Thread(new BookingTask(manager, createReservation(102, "Bob", "Deluxe", 2)), "Guest-2");
-        Thread t3 = new Thread(new BookingTask(manager, createReservation(103, "Charlie", "Standard", 1)), "Guest-3");
-        Thread t4 = new Thread(new BookingTask(manager, createReservation(104, "Daisy", "Suite", 2)), "Guest-4");
-        Thread t5 = new Thread(new BookingTask(manager, createReservation(105, "Eve", "Deluxe", 1)), "Guest-5");
-
-        // Start all threads simultaneously
-        t1.start();
-        t2.start();
-        t3.start();
-        t4.start();
-        t5.start();
-
-        // Wait for all threads to finish
+        // Simulate bookings
         try {
-            t1.join();
-            t2.join();
-            t3.join();
-            t4.join();
-            t5.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+            manager.addReservation(new Reservation(101, "Alice", "Deluxe", 3));
+            manager.addReservation(new Reservation(102, "Bob", "Standard", 2));
+        } catch (InvalidBookingException e) {
+            System.out.println("Booking failed: " + e.getMessage());
         }
 
-        // Display final state
+        // Display current state
         manager.generateReport();
         manager.showInventory();
-    }
 
-    // Helper method to create reservations safely
-    private static Reservation createReservation(int id, String name, String roomType, int nights) {
-        try {
-            return new Reservation(id, name, roomType, nights);
-        } catch (InvalidBookingException e) {
-            System.out.println("Failed to create reservation: " + e.getMessage());
-            return null;
-        }
+        // Save state before exit
+        manager.saveState();
     }
 }
